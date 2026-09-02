@@ -4,16 +4,17 @@
 //  di Discord Developer Portal. Discord akan POST ke sini setiap
 //  ada yang memakai /daftar, /akun, atau /gantipassword - bot
 //  TIDAK perlu nyala 24/7 seperti versi discord.js sebelumnya.
+//
+//  CATATAN: sengaja TIDAK pakai res.status()/res.json() (helper
+//  ala Next.js) karena di sebagian runtime Vercel helper itu tidak
+//  tersedia dan bikin function crash (TypeError: res.status is not
+//  a function). Di sini pakai res.writeHead()/res.end() murni,
+//  method standar Node.js http yang pasti selalu ada.
 // ============================================================
 
 const nacl = require('tweetnacl');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
-
-// Wajib nonaktifkan body parser bawaan Vercel supaya kita bisa
-// verifikasi signature dari RAW body (bukan yang sudah di-parse).
-// (config diset di akhir file, setelah module.exports didefinisikan
-// sebagai function - lihat baris paling bawah)
 
 // Pool dibuat di luar handler supaya bisa dipakai ulang antar
 // invocation "warm" (menghemat koneksi ke database).
@@ -47,6 +48,18 @@ function getOption(options, name) {
 	return found ? found.value : null;
 }
 
+function sendJson(res, statusCode, obj) {
+	if (res.headersSent) return;
+	res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+	res.end(JSON.stringify(obj));
+}
+
+function sendText(res, statusCode, text) {
+	if (res.headersSent) return;
+	res.writeHead(statusCode, { 'Content-Type': 'text/plain' });
+	res.end(text);
+}
+
 function reply(content, ephemeral = true) {
 	return {
 		type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
@@ -70,13 +83,13 @@ function replyEmbed(embed, ephemeral = true) {
 module.exports = async (req, res) => {
 	try {
 		if (req.method !== 'POST') {
-			res.status(405).send('Method not allowed');
+			sendText(res, 405, 'Method not allowed');
 			return;
 		}
 
 		if (!process.env.DISCORD_PUBLIC_KEY) {
 			console.error('DISCORD_PUBLIC_KEY belum di-set di environment variables Vercel.');
-			res.status(500).send('server misconfigured: DISCORD_PUBLIC_KEY missing');
+			sendText(res, 500, 'server misconfigured: DISCORD_PUBLIC_KEY missing');
 			return;
 		}
 
@@ -100,7 +113,7 @@ module.exports = async (req, res) => {
 		}
 
 		if (!isValid) {
-			res.status(401).send('invalid request signature');
+			sendText(res, 401, 'invalid request signature');
 			return;
 		}
 
@@ -108,7 +121,7 @@ module.exports = async (req, res) => {
 
 		// Discord PING untuk verifikasi endpoint saat pertama kali disetel
 		if (body.type === 1) {
-			res.status(200).json({ type: 1 });
+			sendJson(res, 200, { type: 1 });
 			return;
 		}
 
@@ -124,11 +137,11 @@ module.exports = async (req, res) => {
 					const password = getOption(options, 'password');
 
 					if (!/^[A-Za-z]+_[A-Za-z]+$/.test(namaIC)) {
-						res.status(200).json(reply('Format nama IC harus `Nama_Belakang` (contoh: John_Doe).'));
+						sendJson(res, 200, reply('Format nama IC harus `Nama_Belakang` (contoh: John_Doe).'));
 						return;
 					}
 					if (!password || password.length < 6) {
-						res.status(200).json(reply('Password minimal 6 karakter.'));
+						sendJson(res, 200, reply('Password minimal 6 karakter.'));
 						return;
 					}
 
@@ -137,7 +150,7 @@ module.exports = async (req, res) => {
 						[namaIC, discordId]
 					);
 					if (existing.length > 0) {
-						res.status(200).json(reply('Nama IC sudah dipakai, atau Discord kamu sudah punya akun.'));
+						sendJson(res, 200, reply('Nama IC sudah dipakai, atau Discord kamu sudah punya akun.'));
 						return;
 					}
 
@@ -147,7 +160,7 @@ module.exports = async (req, res) => {
 						[discordId, namaIC, hash]
 					);
 
-					res.status(200).json(reply(
+					sendJson(res, 200, reply(
 						`Akun **${namaIC}** berhasil didaftarkan! Silakan login di server SA-MP dengan nama karakter tersebut dan password yang kamu buat barusan.`
 					));
 					return;
@@ -159,11 +172,11 @@ module.exports = async (req, res) => {
 						[discordId]
 					);
 					if (rows.length === 0) {
-						res.status(200).json(reply('Kamu belum punya akun. Pakai `/daftar` dulu.'));
+						sendJson(res, 200, reply('Kamu belum punya akun. Pakai `/daftar` dulu.'));
 						return;
 					}
 					const u = rows[0];
-					res.status(200).json(replyEmbed({
+					sendJson(res, 200, replyEmbed({
 						title: `UCP - ${u.username_ic}`,
 						color: 0x2563EB,
 						fields: [
@@ -181,7 +194,7 @@ module.exports = async (req, res) => {
 				if (name === 'gantipassword') {
 					const passBaru = getOption(options, 'password_baru');
 					if (!passBaru || passBaru.length < 6) {
-						res.status(200).json(reply('Password minimal 6 karakter.'));
+						sendJson(res, 200, reply('Password minimal 6 karakter.'));
 						return;
 					}
 					const hash = bcrypt.hashSync(passBaru, 10);
@@ -190,32 +203,34 @@ module.exports = async (req, res) => {
 						[hash, discordId]
 					);
 					if (result.affectedRows === 0) {
-						res.status(200).json(reply('Kamu belum punya akun.'));
+						sendJson(res, 200, reply('Kamu belum punya akun.'));
 						return;
 					}
-					res.status(200).json(reply('Password berhasil diganti.'));
+					sendJson(res, 200, reply('Password berhasil diganti.'));
 					return;
 				}
 
-				res.status(200).json(reply('Command tidak dikenali.'));
+				sendJson(res, 200, reply('Command tidak dikenali.'));
 			} catch (err) {
 				console.error('Error saat proses command:', err);
-				res.status(200).json(reply('Terjadi error internal, coba lagi nanti.'));
+				sendJson(res, 200, reply('Terjadi error internal, coba lagi nanti.'));
 			}
 			return;
 		}
 
-		res.status(400).send('unhandled interaction type');
+		sendText(res, 400, 'unhandled interaction type');
 	} catch (fatalErr) {
 		// Jaring pengaman terakhir - jangan biarkan function crash mentah
 		// (itu yang menyebabkan FUNCTION_INVOCATION_FAILED tanpa pesan jelas).
 		console.error('FATAL di handler interactions:', fatalErr);
-		if (!res.headersSent) {
-			res.status(500).send('internal error, cek function logs di Vercel');
-		}
+		sendText(res, 500, 'internal error, cek function logs di Vercel');
 	}
 };
 
+// PENTING: config ini harus di-attach SETELAH module.exports berupa
+// function di atas, bukan sebelumnya - kalau ditaruh sebelum baris
+// "module.exports = async (req,res) => {...}", config-nya akan
+// ketimpa/hilang karena module.exports diganti jadi object baru.
 module.exports.config = {
 	api: {
 		bodyParser: false,
