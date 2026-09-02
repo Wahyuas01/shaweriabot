@@ -14,7 +14,7 @@
 
 const nacl = require('tweetnacl');
 const mysql = require('mysql2/promise');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 // Pool dibuat di luar handler supaya bisa dipakai ulang antar
 // invocation "warm" (menghemat koneksi ke database).
@@ -46,6 +46,15 @@ function getRawBody(req) {
 function getOption(options, name) {
 	const found = (options || []).find((o) => o.name === name);
 	return found ? found.value : null;
+}
+
+// Sama persis dengan SHA256_PassHash() bawaan SA-MP/open.mp di sisi
+// Pawn: sha256(password + salt), di-uppercase-kan karena SHA256_PassHash
+// mengembalikan hex huruf besar.
+function hashPassword(plain) {
+	const salt = crypto.randomBytes(32).toString('hex');
+	const hash = crypto.createHash('sha256').update(plain + salt).digest('hex').toUpperCase();
+	return { hash, salt };
 }
 
 function sendJson(res, statusCode, obj) {
@@ -154,10 +163,10 @@ module.exports = async (req, res) => {
 						return;
 					}
 
-					const hash = bcrypt.hashSync(password, 10);
+					const { hash, salt } = hashPassword(password);
 					await db.query(
-						'INSERT INTO users (discord_id, username_ic, password_hash) VALUES (?, ?, ?)',
-						[discordId, namaIC, hash]
+						'INSERT INTO users (discord_id, username_ic, password_hash, password_salt) VALUES (?, ?, ?, ?)',
+						[discordId, namaIC, hash, salt]
 					);
 
 					sendJson(res, 200, reply(
@@ -197,10 +206,10 @@ module.exports = async (req, res) => {
 						sendJson(res, 200, reply('Password minimal 6 karakter.'));
 						return;
 					}
-					const hash = bcrypt.hashSync(passBaru, 10);
+					const { hash, salt } = hashPassword(passBaru);
 					const [result] = await db.query(
-						'UPDATE users SET password_hash = ? WHERE discord_id = ?',
-						[hash, discordId]
+						'UPDATE users SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
+						[hash, salt, discordId]
 					);
 					if (result.affectedRows === 0) {
 						sendJson(res, 200, reply('Kamu belum punya akun.'));
