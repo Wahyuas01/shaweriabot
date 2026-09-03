@@ -161,7 +161,7 @@ async function handleGantiPassword(db, discordId, options) {
 			flags: ephemeral ? 64 : 0, // 64 = EPHEMERAL
 		},
 	};
-}
+
 
 function replyEmbed(embed, ephemeral = true) {
 	return {
