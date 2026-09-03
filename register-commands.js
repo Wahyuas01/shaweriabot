@@ -11,15 +11,15 @@ const fetch = require('node-fetch');
 const commands = [
 	{
 		name: 'daftar',
-		description: 'Daftar akun UCP Shaweria Roleplay',
+		description: 'Daftar akun UCP Shaweria Roleplay (karakter dibuat di in-game setelah login)',
 		options: [
-			{ name: 'nama_ic', description: 'Nama karakter in-game, format: Nama_Belakang', type: 3, required: true },
-			{ name: 'password', description: 'Password untuk login in-game', type: 3, required: true },
+			{ name: 'username', description: 'Username UCP (3-24 karakter, huruf/angka/underscore)', type: 3, required: true },
+			{ name: 'password', description: 'Password untuk login UCP', type: 3, required: true },
 		],
 	},
 	{
 		name: 'akun',
-		description: 'Lihat data karakter kamu',
+		description: 'Lihat info akun UCP dan daftar karaktermu',
 	},
 	{
 		name: 'gantipassword',
