@@ -154,6 +154,7 @@ async function handleGantiPassword(db, discordId, options) {
 	}
 	return reply('Password UCP berhasil diganti.');
 }
+function reply(content, ephemeral = true) {
 	return {
 		type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
 		data: {
@@ -161,7 +162,7 @@ async function handleGantiPassword(db, discordId, options) {
 			flags: ephemeral ? 64 : 0, // 64 = EPHEMERAL
 		},
 	};
-
+}
 
 function replyEmbed(embed, ephemeral = true) {
 	return {
