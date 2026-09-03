@@ -69,7 +69,91 @@ function sendText(res, statusCode, text) {
 	res.end(text);
 }
 
-function reply(content, ephemeral = true) {
+// ============================================================
+//  /daftar username password - bikin akun UCP (BUKAN karakter).
+//  Karakter dibuat belakangan langsung di in-game setelah login UCP.
+// ============================================================
+async function handleDaftar(db, discordId, options) {
+	const username = getOption(options, 'username');
+	const password = getOption(options, 'password');
+
+	if (!/^[A-Za-z0-9_]{3,24}$/.test(username || '')) {
+		return reply('Username UCP harus 3-24 karakter, huruf/angka/underscore saja (tanpa spasi).');
+	}
+	if (!password || password.length < 6) {
+		return reply('Password minimal 6 karakter.');
+	}
+
+	const [existing] = await db.query(
+		'SELECT id FROM ucp_accounts WHERE ucp_username = ? OR discord_id = ? LIMIT 1',
+		[username, discordId]
+	);
+	if (existing.length > 0) {
+		return reply('Username itu sudah dipakai, atau Discord kamu sudah punya akun UCP.');
+	}
+
+	const { hash, salt } = hashPassword(password);
+	await db.query(
+		'INSERT INTO ucp_accounts (discord_id, ucp_username, password_hash, password_salt) VALUES (?, ?, ?, ?)',
+		[discordId, username, hash, salt]
+	);
+
+	return reply(
+		`Akun UCP **${username}** berhasil dibuat! Connect ke server SA-MP, masukkan username & password ini saat login, lalu buat karaktermu langsung di dalam game.`
+	);
+}
+
+// ============================================================
+//  /akun - lihat info UCP + daftar karakter yang dipunya
+// ============================================================
+async function handleAkun(db, discordId) {
+	const [ucpRows] = await db.query(
+		'SELECT id, ucp_username, admin_level, banned FROM ucp_accounts WHERE discord_id = ? LIMIT 1',
+		[discordId]
+	);
+	if (ucpRows.length === 0) {
+		return reply('Kamu belum punya akun UCP. Pakai `/daftar` dulu.');
+	}
+	const ucp = ucpRows[0];
+
+	const [chars] = await db.query(
+		'SELECT char_name, level, money, bank FROM characters WHERE ucp_id = ? ORDER BY id ASC',
+		[ucp.id]
+	);
+
+	const charList = chars.length === 0
+		? '_Belum ada karakter - buat langsung di in-game setelah login._'
+		: chars.map(c => `**${c.char_name}** - Level ${c.level}, $${c.money} tunai, $${c.bank} bank`).join('\n');
+
+	return replyEmbed({
+		title: `UCP - ${ucp.ucp_username}`,
+		color: 0x2563EB,
+		fields: [
+			{ name: 'Admin Level', value: String(ucp.admin_level), inline: true },
+			{ name: 'Status', value: ucp.banned ? 'BANNED' : 'Aktif', inline: true },
+			{ name: 'Karakter', value: charList, inline: false },
+		],
+	});
+}
+
+// ============================================================
+//  /gantipassword - ganti password UCP
+// ============================================================
+async function handleGantiPassword(db, discordId, options) {
+	const passBaru = getOption(options, 'password_baru');
+	if (!passBaru || passBaru.length < 6) {
+		return reply('Password minimal 6 karakter.');
+	}
+	const { hash, salt } = hashPassword(passBaru);
+	const [result] = await db.query(
+		'UPDATE ucp_accounts SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
+		[hash, salt, discordId]
+	);
+	if (result.affectedRows === 0) {
+		return reply('Kamu belum punya akun UCP.');
+	}
+	return reply('Password UCP berhasil diganti.');
+}
 	return {
 		type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
 		data: {
@@ -142,80 +226,17 @@ module.exports = async (req, res) => {
 
 			try {
 				if (name === 'daftar') {
-					const namaIC = getOption(options, 'nama_ic');
-					const password = getOption(options, 'password');
-
-					if (!/^[A-Za-z]+_[A-Za-z]+$/.test(namaIC)) {
-						sendJson(res, 200, reply('Format nama IC harus `Nama_Belakang` (contoh: John_Doe).'));
-						return;
-					}
-					if (!password || password.length < 6) {
-						sendJson(res, 200, reply('Password minimal 6 karakter.'));
-						return;
-					}
-
-					const [existing] = await db.query(
-						'SELECT id FROM users WHERE username_ic = ? OR discord_id = ? LIMIT 1',
-						[namaIC, discordId]
-					);
-					if (existing.length > 0) {
-						sendJson(res, 200, reply('Nama IC sudah dipakai, atau Discord kamu sudah punya akun.'));
-						return;
-					}
-
-					const { hash, salt } = hashPassword(password);
-					await db.query(
-						'INSERT INTO users (discord_id, username_ic, password_hash, password_salt) VALUES (?, ?, ?, ?)',
-						[discordId, namaIC, hash, salt]
-					);
-
-					sendJson(res, 200, reply(
-						`Akun **${namaIC}** berhasil didaftarkan! Silakan login di server SA-MP dengan nama karakter tersebut dan password yang kamu buat barusan.`
-					));
+					sendJson(res, 200, await handleDaftar(db, discordId, options));
 					return;
 				}
 
 				if (name === 'akun') {
-					const [rows] = await db.query(
-						'SELECT username_ic, level, money, bank, admin_level, warnings, banned FROM users WHERE discord_id = ? LIMIT 1',
-						[discordId]
-					);
-					if (rows.length === 0) {
-						sendJson(res, 200, reply('Kamu belum punya akun. Pakai `/daftar` dulu.'));
-						return;
-					}
-					const u = rows[0];
-					sendJson(res, 200, replyEmbed({
-						title: `UCP - ${u.username_ic}`,
-						color: 0x2563EB,
-						fields: [
-							{ name: 'Level', value: String(u.level), inline: true },
-							{ name: 'Uang Tunai', value: `$${u.money}`, inline: true },
-							{ name: 'Bank', value: `$${u.bank}`, inline: true },
-							{ name: 'Admin Level', value: String(u.admin_level), inline: true },
-							{ name: 'Warning', value: String(u.warnings), inline: true },
-							{ name: 'Status', value: u.banned ? 'BANNED' : 'Aktif', inline: true },
-						],
-					}));
+					sendJson(res, 200, await handleAkun(db, discordId));
 					return;
 				}
 
 				if (name === 'gantipassword') {
-					const passBaru = getOption(options, 'password_baru');
-					if (!passBaru || passBaru.length < 6) {
-						sendJson(res, 200, reply('Password minimal 6 karakter.'));
-						return;
-					}
-					const { hash, salt } = hashPassword(passBaru);
-					const [result] = await db.query(
-						'UPDATE users SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
-						[hash, salt, discordId]
-					);
-					if (result.affectedRows === 0) {
-						sendJson(res, 200, reply('Kamu belum punya akun.'));
-						return;
-					}
-					sendJson(res, 200, reply('Password berhasil diganti.'));
+					sendJson(res, 200, await handleGantiPassword(db, discordId, options));
 					return;
 				}
 
