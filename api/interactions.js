@@ -85,7 +85,7 @@ async function handleDaftar(db, discordId, options) {
 	}
 
 	const [existing] = await db.query(
-		'SELECT id FROM ucp_accounts WHERE ucp_username = ? OR discord_id = ? LIMIT 1',
+		'SELECT id FROM users WHERE ucp_username = ? OR discord_id = ? LIMIT 1',
 		[username, discordId]
 	);
 	if (existing.length > 0) {
@@ -94,7 +94,7 @@ async function handleDaftar(db, discordId, options) {
 
 	const { hash, salt } = hashPassword(password);
 	await db.query(
-		'INSERT INTO ucp_accounts (discord_id, ucp_username, password_hash, password_salt) VALUES (?, ?, ?, ?)',
+		'INSERT INTO users (discord_id, ucp_username, password_hash, password_salt) VALUES (?, ?, ?, ?)',
 		[discordId, username, hash, salt]
 	);
 
@@ -108,7 +108,7 @@ async function handleDaftar(db, discordId, options) {
 // ============================================================
 async function handleAkun(db, discordId) {
 	const [ucpRows] = await db.query(
-		'SELECT id, ucp_username, admin_level, banned FROM ucp_accounts WHERE discord_id = ? LIMIT 1',
+		'SELECT id, ucp_username, admin_level, banned FROM users WHERE discord_id = ? LIMIT 1',
 		[discordId]
 	);
 	if (ucpRows.length === 0) {
@@ -146,7 +146,7 @@ async function handleGantiPassword(db, discordId, options) {
 	}
 	const { hash, salt } = hashPassword(passBaru);
 	const [result] = await db.query(
-		'UPDATE ucp_accounts SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
+		'UPDATE users SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
 		[hash, salt, discordId]
 	);
 	if (result.affectedRows === 0) {
