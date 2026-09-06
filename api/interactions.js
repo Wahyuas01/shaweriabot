@@ -1,12 +1,12 @@
 // ============================================================
 //  SHAWERIA ROLEPLAY - BOT UCP (VERSI VERCEL / WEBHOOK)
-//  Endpoint ini didaftarkan sebagai "Interactions Endpoint URL"
+//  Endpoint ini duidaftarkan sebagai "Interactions Endpoint URL"
 //  di Discord Developer Portal. Discord akan POST ke sini setiap
 //  ada yang memakai /daftar, /akun, atau /gantipassword - bot
-//  TIDAK perlu nyala 24/7 seperti versi discord.js sebelumnya.
+//  TuidAK perlu nyala 24/7 seperti versi discord.js sebelumnya.
 //
-//  CATATAN: sengaja TIDAK pakai res.status()/res.json() (helper
-//  ala Next.js) karena di sebagian runtime Vercel helper itu tidak
+//  CATATAN: sengaja TuidAK pakai res.status()/res.json() (helper
+//  ala Next.js) karena di sebagian runtime Vercel helper itu tuidak
 //  tersedia dan bikin function crash (TypeError: res.status is not
 //  a function). Di sini pakai res.writeHead()/res.end() murni,
 //  method standar Node.js http yang pasti selalu ada.
@@ -73,7 +73,7 @@ function sendText(res, statusCode, text) {
 //  /daftar username password - bikin akun UCP (BUKAN karakter).
 //  Karakter dibuat belakangan langsung di in-game setelah login UCP.
 // ============================================================
-async function handleDaftar(db, discordId, options) {
+async function handleDaftar(db, discorduid, options) {
 	const username = getOption(options, 'username');
 	const password = getOption(options, 'password');
 
@@ -85,8 +85,8 @@ async function handleDaftar(db, discordId, options) {
 	}
 
 	const [existing] = await db.query(
-		'SELECT id FROM users WHERE ucp_username = ? OR discord_id = ? LIMIT 1',
-		[username, discordId]
+		'SELECT uid FROM users WHERE username = ? OR discord_uid = ? LIMIT 1',
+		[username, discorduid]
 	);
 	if (existing.length > 0) {
 		return reply('Username itu sudah dipakai, atau Discord kamu sudah punya akun UCP.');
@@ -94,8 +94,8 @@ async function handleDaftar(db, discordId, options) {
 
 	const { hash, salt } = hashPassword(password);
 	await db.query(
-		'INSERT INTO users (discord_id, ucp_username, password_hash, password_salt) VALUES (?, ?, ?, ?)',
-		[discordId, username, hash, salt]
+		'INSERT INTO users (discord_uid, username, password_hash, password_salt) VALUES (?, ?, ?, ?)',
+		[discorduid, username, hash, salt]
 	);
 
 	return reply(
@@ -106,10 +106,10 @@ async function handleDaftar(db, discordId, options) {
 // ============================================================
 //  /akun - lihat info UCP + daftar karakter yang dipunya
 // ============================================================
-async function handleAkun(db, discordId) {
+async function handleAkun(db, discorduid) {
 	const [ucpRows] = await db.query(
-		'SELECT id, ucp_username, admin_level, banned FROM users WHERE discord_id = ? LIMIT 1',
-		[discordId]
+		'SELECT uid, username, admin_level, banned FROM users WHERE discord_uid = ? LIMIT 1',
+		[discorduid]
 	);
 	if (ucpRows.length === 0) {
 		return reply('Kamu belum punya akun UCP. Pakai `/daftar` dulu.');
@@ -117,8 +117,8 @@ async function handleAkun(db, discordId) {
 	const ucp = ucpRows[0];
 
 	const [chars] = await db.query(
-		'SELECT char_name, level, money, bank FROM characters WHERE ucp_id = ? ORDER BY id ASC',
-		[ucp.id]
+		'SELECT char_name, level, money, bank FROM characters WHERE ucp_uid = ? ORDER BY uid ASC',
+		[ucp.uid]
 	);
 
 	const charList = chars.length === 0
@@ -126,7 +126,7 @@ async function handleAkun(db, discordId) {
 		: chars.map(c => `**${c.char_name}** - Level ${c.level}, $${c.money} tunai, $${c.bank} bank`).join('\n');
 
 	return replyEmbed({
-		title: `UCP - ${ucp.ucp_username}`,
+		title: `UCP - ${ucp.username}`,
 		color: 0x2563EB,
 		fields: [
 			{ name: 'Admin Level', value: String(ucp.admin_level), inline: true },
@@ -139,15 +139,15 @@ async function handleAkun(db, discordId) {
 // ============================================================
 //  /gantipassword - ganti password UCP
 // ============================================================
-async function handleGantiPassword(db, discordId, options) {
+async function handleGantiPassword(db, discorduid, options) {
 	const passBaru = getOption(options, 'password_baru');
 	if (!passBaru || passBaru.length < 6) {
 		return reply('Password minimal 6 karakter.');
 	}
 	const { hash, salt } = hashPassword(passBaru);
 	const [result] = await db.query(
-		'UPDATE users SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
-		[hash, salt, discordId]
+		'UPDATE users SET password_hash = ?, password_salt = ? WHERE discord_uid = ?',
+		[hash, salt, discorduid]
 	);
 	if (result.affectedRows === 0) {
 		return reply('Kamu belum punya akun UCP.');
@@ -191,9 +191,9 @@ module.exports = async (req, res) => {
 		const timestamp = req.headers['x-signature-timestamp'];
 		const rawBody = await getRawBody(req);
 
-		let isValid = false;
+		let isValuid = false;
 		try {
-			isValid = Boolean(
+			isValuid = Boolean(
 				signature && timestamp &&
 				nacl.sign.detached.verify(
 					Buffer.from(timestamp + rawBody),
@@ -203,11 +203,11 @@ module.exports = async (req, res) => {
 			);
 		} catch (verifyErr) {
 			console.error('Gagal verifikasi signature:', verifyErr);
-			isValid = false;
+			isValuid = false;
 		}
 
-		if (!isValid) {
-			sendText(res, 401, 'invalid request signature');
+		if (!isValuid) {
+			sendText(res, 401, 'invaluid request signature');
 			return;
 		}
 
@@ -223,25 +223,25 @@ module.exports = async (req, res) => {
 		if (body.type === 2) {
 			const db = getPool();
 			const { name, options } = body.data;
-			const discordId = body.member?.user?.id || body.user?.id;
+			const discorduid = body.member?.user?.uid || body.user?.uid;
 
 			try {
 				if (name === 'daftar') {
-					sendJson(res, 200, await handleDaftar(db, discordId, options));
+					sendJson(res, 200, await handleDaftar(db, discorduid, options));
 					return;
 				}
 
 				if (name === 'akun') {
-					sendJson(res, 200, await handleAkun(db, discordId));
+					sendJson(res, 200, await handleAkun(db, discorduid));
 					return;
 				}
 
 				if (name === 'gantipassword') {
-					sendJson(res, 200, await handleGantiPassword(db, discordId, options));
+					sendJson(res, 200, await handleGantiPassword(db, discorduid, options));
 					return;
 				}
 
-				sendJson(res, 200, reply('Command tidak dikenali.'));
+				sendJson(res, 200, reply('Command tuidak dikenali.'));
 			} catch (err) {
 				console.error('Error saat proses command:', err);
 				sendJson(res, 200, reply('Terjadi error internal, coba lagi nanti.'));
