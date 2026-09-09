@@ -1,9 +1,6 @@
-// Jalankan SEKALI dari komputer lokal kamu tiap kali command berubah:
+// Jalankan SEKALI dari komputer lokal tiap kali command berubah:
 //   npm install
 //   node register-commands.js
-//
-// Ini TIDAK jalan di Vercel - cuma script bantu one-off untuk daftarkan
-// /daftar, /akun, /gantipassword ke Discord API.
 
 require('dotenv').config();
 const fetch = require('node-fetch');
@@ -13,7 +10,7 @@ const commands = [
 		name: 'daftar',
 		description: 'Daftar akun UCP Shaweria Roleplay (karakter dibuat di in-game setelah login)',
 		options: [
-			{ name: 'username', description: 'Username UCP (3-24 karakter, huruf/angka/underscore)', type: 3, required: true },
+			{ name: 'ucp', description: 'Username UCP (3-22 karakter, huruf/angka/underscore)', type: 3, required: true },
 			{ name: 'password', description: 'Password untuk login UCP', type: 3, required: true },
 		],
 	},
