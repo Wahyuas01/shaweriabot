@@ -95,7 +95,7 @@ async function handleDaftar(db, discordID, options) {
 	const { hash, salt } = hashPassword(password);
 	await db.query(
 		'INSERT INTO player_ucp (discord_id, UCP, PASSWORD) VALUES (?, ?, ?)',
-		[discordID, UCP, hash, salt]
+		[discordID, UCP, hash]
 	);
 
 	return reply(
@@ -146,8 +146,8 @@ async function handleGantiPassword(db, discordID, options) {
 	}
 	const { hash, salt } = hashPassword(passBaru);
 	const [result] = await db.query(
-		'UPDATE player_ucp SET password_hash = ?, password_salt = ? WHERE discord_id = ?',
-		[hash, salt, discordID]
+		'UPDATE player_ucp SET PASSWORD = ? WHERE discord_id = ?',
+		[hash, discordID]
 	);
 	if (result.affectedRows === 0) {
 		return reply('Kamu belum punya akun UCP.');
@@ -223,7 +223,7 @@ module.exports = async (req, res) => {
 		if (body.type === 2) {
 			const db = getPool();
 			const { name, options } = body.data;
-			const discordID = body.member?.user?.ID || body.user?.ID;
+			const discordID = body.member?.user?.id || body.user?.id;
 
 			try {
 				if (name === 'daftar') {
