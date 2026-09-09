@@ -14,7 +14,7 @@
 
 const nacl = require('tweetnacl');
 const mysql = require('mysql2/promise');
-const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 // Pool dibuat di luar handler supaya bisa dipakai ulang antar
 // invocation "warm" (menghemat koneksi ke database).
@@ -52,9 +52,7 @@ function getOption(options, name) {
 // Pawn: sha256(password + salt), di-uppercase-kan karena SHA256_PassHash
 // mengembalikan hex huruf besar.
 function hashPassword(plain) {
-	const salt = crypto.randomBytes(32).toString('hex');
-	const hash = crypto.createHash('sha256').update(plain + salt).digest('hex').toUpperCase();
-	return { hash, salt };
+    return bcrypt.hashSync(plain, 12);
 }
 
 function sendJson(res, statusCode, obj) {
