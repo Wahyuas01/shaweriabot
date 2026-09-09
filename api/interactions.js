@@ -72,7 +72,7 @@ function sendText(res, statusCode, text) {
 //  Karakter dibuat belakangan langsung di in-game setelah login UCP.
 // ============================================================
 async function handleDaftar(db, discordID, options) {
-	const UCP = getOption(options, 'UCP');
+	const UCP = getOption(options, 'ucp');
 	const password = getOption(options, 'password');
 
 	if (!/^[A-Za-z0-9_]{3,24}$/.test(UCP || '')) {
