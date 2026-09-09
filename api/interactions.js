@@ -1,19 +1,22 @@
 // ============================================================
-//  SHAWERIA ROLEPLAY (base AKRP-V5) - BOT UCP (VERSI VERCEL / WEBHOOK)
-//  Disesuaikan dengan skema database ASLI AKRP-V5:
-//  - Tabel akun UCP: player_ucp (kolom: ID, UCP, Password, discord_id, Blocked, dst)
-//  - Tabel karakter: player_characters (kolom: Char_UCP <- FK ke player_ucp.UCP,
-//    Char_Name, Char_Money, Char_BankMoney, Char_Level, Char_Admin)
+//  SHAWERIA ROLEPLAY - BOT UCP (VERSI VERCEL / WEBHOOK)
+//  Alur: /daftar bikin entri di tabel WHITELISTS (bukan langsung ke
+//  player_ucp) dengan kode verifikasi 5 digit acak. Kode itu dipakai
+//  sebagai "password" pertama kali login di SA-MP - dari situ baru
+//  gamemode yang bikinkan akun asli di player_ucp.
 //
-//  CATATAN: TIDAK pakai res.status()/res.json() (helper ala Next.js)
-//  karena di sebagian runtime Vercel helper itu tidak tersedia dan
-//  bikin function crash. Di sini pakai res.writeHead()/res.end()
-//  murni, method standar Node.js http yang pasti selalu ada.
+//  Tabel whitelists: id, ucp, nickadmin, adutyname, verify, recovery,
+//  date, discordid, allowed
+//
+//  Tabel player_ucp (dipakai setelah verifikasi selesai): ID, UCP,
+//  Password, discord_id, Blocked, Block_Reason, dst.
+//
+//  Tabel player_characters: Char_UCP (FK ke player_ucp.UCP), Char_Name,
+//  Char_Money, Char_BankMoney, Char_Level, Char_Admin.
 // ============================================================
 
 const nacl = require('tweetnacl');
 const mysql = require('mysql2/promise');
-const bcrypt = require('bcryptjs');
 
 let pool;
 function getPool() {
@@ -45,10 +48,9 @@ function getOption(options, name) {
 	return found ? found.value : null;
 }
 
-// Password di tabel player_ucp formatnya bcrypt ($2y$12$...) - ini
-// sudah cocok dipakai dengan bcryptjs di Node, cost 12.
-function hashPassword(plain) {
-	return bcrypt.hashSync(plain, 12);
+// Kode verifikasi 5 digit, selalu tanpa leading zero (10000-99999)
+function generateVerifyCode() {
+	return Math.floor(Math.random() * 90000) + 10000;
 }
 
 function sendJson(res, statusCode, obj) {
@@ -64,105 +66,124 @@ function sendText(res, statusCode, text) {
 }
 
 function reply(content, ephemeral = true) {
-	return {
-		type: 4,
-		data: { content, flags: ephemeral ? 64 : 0 },
-	};
+	return { type: 4, data: { content, flags: ephemeral ? 64 : 0 } };
 }
 
 function replyEmbed(embed, ephemeral = true) {
-	return {
-		type: 4,
-		data: { embeds: [embed], flags: ephemeral ? 64 : 0 },
-	};
+	return { type: 4, data: { embeds: [embed], flags: ephemeral ? 64 : 0 } };
 }
 
 // ============================================================
-//  /daftar ucp password - bikin akun UCP di tabel player_ucp
+//  /daftar ucp - bikin entri whitelist (BUKAN player_ucp langsung)
 // ============================================================
 async function handleDaftar(db, discordId, options) {
 	const ucp = getOption(options, 'ucp');
-	const password = getOption(options, 'password');
 
 	if (!/^[A-Za-z0-9_]{3,22}$/.test(ucp || '')) {
 		return reply('UCP harus 3-22 karakter, huruf/angka/underscore saja (tanpa spasi).');
 	}
-	if (!password || password.length < 6) {
-		return reply('Password minimal 6 karakter.');
-	}
 
-	const [existing] = await db.query(
+	// cek belum dipakai di whitelists MAUPUN player_ucp (yang sudah lolos verifikasi)
+	const [existingWL] = await db.query(
+		'SELECT id FROM whitelists WHERE ucp = ? OR discordid = ? LIMIT 1',
+		[ucp, discordId]
+	);
+	if (existingWL.length > 0) {
+		return reply('UCP itu sudah terdaftar di whitelist, atau Discord kamu sudah pernah daftar.');
+	}
+	const [existingUCP] = await db.query(
 		'SELECT ID FROM player_ucp WHERE UCP = ? OR discord_id = ? LIMIT 1',
 		[ucp, discordId]
 	);
-	if (existing.length > 0) {
-		return reply('UCP itu sudah dipakai, atau Discord kamu sudah punya akun UCP.');
+	if (existingUCP.length > 0) {
+		return reply('UCP itu sudah aktif dipakai, atau Discord kamu sudah punya akun.');
 	}
 
-	const hash = hashPassword(password);
+	const code = generateVerifyCode();
 	await db.query(
-		'INSERT INTO player_ucp (discord_id, UCP, Password, Register_Date) VALUES (?, ?, ?, NOW())',
-		[discordId, ucp, hash]
+		'INSERT INTO whitelists (ucp, nickadmin, adutyname, verify, recovery, date, discordid, allowed) VALUES (?, ?, ?, ?, -1, NOW(), ?, 0)',
+		[ucp, 'Bot', 'Bot', code, discordId]
 	);
 
 	return reply(
-		`Akun UCP **${ucp}** berhasil dibuat! Connect ke server SA-MP, masukkan UCP & password ini saat login, lalu buat karaktermu langsung di dalam game.`
+		`Kamu berhasil di-whitelist dengan UCP **${ucp}**!\n\nConnect ke server SA-MP, masukkan UCP **${ucp}**, lalu masukkan kode ini sebagai password pertama kali login:\n\n**${code}**\n\n(Simpan kode ini baik-baik sampai kamu selesai login pertama kali)`
 	);
 }
 
 // ============================================================
-//  /akun - lihat info UCP + daftar karakter (admin level per karakter,
-//  karena di skema ini Char_Admin nempel ke karakter, bukan ke UCP)
+//  /akun - cek status: masih di whitelist (belum verifikasi) atau
+//  sudah jadi akun aktif di player_ucp
 // ============================================================
 async function handleAkun(db, discordId) {
 	const [ucpRows] = await db.query(
 		'SELECT UCP, Blocked, Block_Reason FROM player_ucp WHERE discord_id = ? LIMIT 1',
 		[discordId]
 	);
-	if (ucpRows.length === 0) {
-		return reply('Kamu belum punya akun UCP. Pakai `/daftar` dulu.');
+
+	if (ucpRows.length > 0) {
+		const ucp = ucpRows[0];
+		const [chars] = await db.query(
+			'SELECT Char_Name, Char_Level, Char_Money, Char_BankMoney, Char_Admin FROM player_characters WHERE Char_UCP = ? ORDER BY pID ASC',
+			[ucp.UCP]
+		);
+		const charList = chars.length === 0
+			? '_Belum ada karakter - buat langsung di in-game setelah login._'
+			: chars.map(c => {
+				const adminTag = c.Char_Admin > 0 ? ` [Admin Lv.${c.Char_Admin}]` : '';
+				return `**${c.Char_Name}**${adminTag} - Level ${c.Char_Level}, $${c.Char_Money} tunai, $${c.Char_BankMoney} bank`;
+			}).join('\n');
+
+		return replyEmbed({
+			title: `UCP - ${ucp.UCP} (Aktif)`,
+			color: 0x2563EB,
+			fields: [
+				{ name: 'Status', value: ucp.Blocked ? `BANNED (${ucp.Block_Reason || 'tanpa alasan'})` : 'Aktif', inline: true },
+				{ name: 'Karakter', value: charList, inline: false },
+			],
+		});
 	}
-	const ucp = ucpRows[0];
 
-	const [chars] = await db.query(
-		'SELECT Char_Name, Char_Level, Char_Money, Char_BankMoney, Char_Admin FROM player_characters WHERE Char_UCP = ? ORDER BY pID ASC',
-		[ucp.UCP]
+	const [wlRows] = await db.query(
+		'SELECT ucp, verify, allowed FROM whitelists WHERE discordid = ? LIMIT 1',
+		[discordId]
 	);
+	if (wlRows.length > 0) {
+		const wl = wlRows[0];
+		return reply(
+			`UCP **${wl.ucp}** kamu masih berstatus whitelist (belum login pertama kali di server).\nKode verifikasi: **${wl.verify}**\n\nConnect ke server dan login pakai kode itu untuk mengaktifkan akun.`
+		);
+	}
 
-	const charList = chars.length === 0
-		? '_Belum ada karakter - buat langsung di in-game setelah login._'
-		: chars.map(c => {
-			const adminTag = c.Char_Admin > 0 ? ` [Admin Lv.${c.Char_Admin}]` : '';
-			return `**${c.Char_Name}**${adminTag} - Level ${c.Char_Level}, $${c.Char_Money} tunai, $${c.Char_BankMoney} bank`;
-		}).join('\n');
-
-	return replyEmbed({
-		title: `UCP - ${ucp.UCP}`,
-		color: 0x2563EB,
-		fields: [
-			{ name: 'Status', value: ucp.Blocked ? `BANNED (${ucp.Block_Reason || 'tanpa alasan'})` : 'Aktif', inline: true },
-			{ name: 'Karakter', value: charList, inline: false },
-		],
-	});
+	return reply('Kamu belum punya akun UCP. Pakai `/daftar` dulu.');
 }
 
 // ============================================================
-//  /gantipassword - ganti password UCP
+//  /gantipassword - reset kode. Kalau masih whitelist, generate kode
+//  verifikasi baru. Kalau sudah akun aktif, ganti Password di player_ucp
+//  (catatan: kalau ternyata cara set password aktif beda, kabari saya).
 // ============================================================
 async function handleGantiPassword(db, discordId, options) {
 	const passBaru = getOption(options, 'password_baru');
-	if (!passBaru || passBaru.length < 6) {
-		return reply('Password minimal 6 karakter.');
+
+	const [ucpRows] = await db.query('SELECT UCP FROM player_ucp WHERE discord_id = ? LIMIT 1', [discordId]);
+	if (ucpRows.length > 0) {
+		if (!passBaru || passBaru.length < 6) {
+			return reply('Password minimal 6 karakter.');
+		}
+		const bcrypt = require('bcryptjs');
+		const hash = bcrypt.hashSync(passBaru, 12);
+		await db.query('UPDATE player_ucp SET Password = ? WHERE discord_id = ?', [hash, discordId]);
+		return reply('Password akun UCP aktif kamu berhasil diganti.');
 	}
-	const hash = hashPassword(passBaru);
-	const [result] = await db.query(
-		'UPDATE player_ucp SET Password = ? WHERE discord_id = ?',
-		[hash, discordId]
-	);
-	if (result.affectedRows === 0) {
-		return reply('Kamu belum punya akun UCP.');
+
+	const [wlRows] = await db.query('SELECT id FROM whitelists WHERE discordid = ? LIMIT 1', [discordId]);
+	if (wlRows.length > 0) {
+		const newCode = generateVerifyCode();
+		await db.query('UPDATE whitelists SET verify = ? WHERE discordid = ?', [newCode, discordId]);
+		return reply(`Kode verifikasi baru kamu: **${newCode}**. Pakai ini untuk login pertama kali di server.`);
 	}
-	return reply('Password UCP berhasil diganti.');
+
+	return reply('Kamu belum punya akun UCP atau whitelist. Pakai `/daftar` dulu.');
 }
 
 module.exports = async (req, res) => {

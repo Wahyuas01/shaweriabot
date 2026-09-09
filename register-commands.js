@@ -1,28 +1,23 @@
-// Jalankan SEKALI dari komputer lokal tiap kali command berubah:
-//   npm install
-//   node register-commands.js
-
 require('dotenv').config();
 const fetch = require('node-fetch');
 
 const commands = [
 	{
 		name: 'daftar',
-		description: 'Daftar akun UCP Shaweria Roleplay (karakter dibuat di in-game setelah login)',
+		description: 'Daftar whitelist Shaweria Roleplay - dapat kode verifikasi buat login pertama kali',
 		options: [
 			{ name: 'ucp', description: 'Username UCP (3-22 karakter, huruf/angka/underscore)', type: 3, required: true },
-			{ name: 'password', description: 'Password untuk login UCP', type: 3, required: true },
 		],
 	},
 	{
 		name: 'akun',
-		description: 'Lihat info akun UCP dan daftar karaktermu',
+		description: 'Cek status whitelist / info akun UCP kamu',
 	},
 	{
 		name: 'gantipassword',
-		description: 'Ganti password UCP',
+		description: 'Reset kode verifikasi (belum login) atau ganti password (sudah aktif)',
 		options: [
-			{ name: 'password_baru', description: 'Password baru', type: 3, required: true },
+			{ name: 'password_baru', description: 'Password baru (hanya untuk akun yang sudah aktif)', type: 3, required: false },
 		],
 	},
 ];
