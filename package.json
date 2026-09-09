@@ -4,8 +4,9 @@
   "description": "Bot UCP Discord Shaweria Roleplay - versi webhook untuk Vercel (tanpa VPS, gratis)",
   "main": "api/interactions.js",
   "dependencies": {
-    "tweetnacl": "^1.0.3",
-    "mysql2": "^3.10.0"
+    "bcryptjs": "^3.0.3",
+    "mysql2": "^3.10.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "dotenv": "^16.4.5",
