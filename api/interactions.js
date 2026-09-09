@@ -90,10 +90,10 @@ async function handleDaftar(db, discordID, options) {
 		return reply('UCP itu sudah dipakai, atau Discord kamu sudah punya akun UCP.');
 	}
 
-	const { hash, salt } = hashPassword(password);
+	const hash = hashPassword(password);
 	await db.query(
-		'INSERT INTO player_ucp (discord_id, UCP, PASSWORD) VALUES (?, ?, ?)',
-		[discordID, UCP, hash]
+    	'INSERT INTO player_ucp (discord_id, UCP, PASSWORD) VALUES (?, ?, ?)',
+    	[discordID, UCP, hash]
 	);
 
 	return reply(
@@ -142,10 +142,10 @@ async function handleGantiPassword(db, discordID, options) {
 	if (!passBaru || passBaru.length < 6) {
 		return reply('Password minimal 6 karakter.');
 	}
-	const { hash, salt } = hashPassword(passBaru);
+	const hash = hashPassword(passBaru);
 	const [result] = await db.query(
-		'UPDATE player_ucp SET PASSWORD = ? WHERE discord_id = ?',
-		[hash, discordID]
+    	'UPDATE player_ucp SET PASSWORD = ? WHERE discord_id = ?',
+    	[hash, discordID]
 	);
 	if (result.affectedRows === 0) {
 		return reply('Kamu belum punya akun UCP.');
